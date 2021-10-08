@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+import asyncio
 
 from contextlib import contextmanager
 from logging import getLogger
@@ -30,7 +31,7 @@ class ServiceRunner(object):
     """
     def __init__(self):
         self.service_map = {}
-
+        self.loop = asyncio.get_event_loop()
         self.container_cls = get_container_cls()
 
     @property
@@ -50,7 +51,7 @@ class ServiceRunner(object):
         container = self.container_cls(cls)
         self.service_map[service_name] = container
 
-    def start(self):
+    async def start(self):
         """ Start all the registered services.
 
         A new container is created for each service using the container
@@ -62,11 +63,16 @@ class ServiceRunner(object):
         service_names = ', '.join(self.service_names)
         _log.info('starting services: %s', service_names)
 
-        SpawningProxy(self.containers).start()
-
-        _log.debug('services started: %s', service_names)
+        for container in self.containers:
+            await container.start()
+        # ps = SpawningProxy(self.containers).start()
+        # print('ps: ', ps)
+        # print('loop: ', self.loop)
+        # _log.debug('services started: %s', service_names)
+        # self.loop.run_until_complete(ps)
 
     def stop(self):
+        print('self: ', self)
         """ Stop all running containers concurrently.
         The method blocks until all containers have stopped.
         """

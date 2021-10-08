@@ -40,13 +40,13 @@ class Extension(object):
         inst.__params = (args, kwargs)
         return inst
 
-    def setup(self):
+    async def setup(self):
         """ Called on bound Extensions before the container starts.
 
         Extensions should do any required initialisation here.
         """
 
-    def start(self):
+    async def start(self):
         """ Called on bound Extensions when the container has successfully
         started.
 

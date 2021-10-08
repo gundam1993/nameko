@@ -1,5 +1,4 @@
 import sys
-
 import eventlet
 from eventlet.queue import LightQueue
 
@@ -65,21 +64,25 @@ class SpawningProxy(object):
         self._items = items
         self.abort_on_error = abort_on_error
 
-    def __getattr__(self, name):
+    # def __getattr__(self, name):
 
-        def spawning_method(*args, **kwargs):
-            items = self._items
-            if items:
-                pool = eventlet.GreenPool(len(items))
+    #     def spawning_method(*args, **kwargs):
+    #         items = self._items
+    #         if items:
+    #             # pool = eventlet.GreenPool(len(items))
+    #             # pool = asyncio.Semaphore(len(items))
 
-                def call(item):
-                    return getattr(item, name)(*args, **kwargs)
+    #             def call(item):
+    #                 # pool.acquire()
+    #                 return getattr(item, name)(*args, **kwargs)
 
-                if self.abort_on_error:
-                    return list(fail_fast_imap(pool, call, self._items))
-                else:
-                    return list(pool.imap(call, self._items))
-        return spawning_method
+    #             if self.abort_on_error:
+    #                 return
+    #                 # return list(fail_fast_imap(pool, call, self._items))
+    #             else:
+    #                 # return list(pool.imap(call, self._items))
+    #                 return list(map(call, self._items))
+    #     return spawning_method
 
 
 class SpawningSet(set):

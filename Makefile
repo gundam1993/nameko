@@ -37,3 +37,9 @@ spelling:
 
 linkcheck:
 	sphinx-build -W -b linkcheck -d docs/build/doctrees docs docs/build/linkcheck
+
+run:
+	nameko run --config config.yaml testService.service:Test
+
+shell:
+	nameko shell --config config.yaml
