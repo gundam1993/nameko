@@ -20,14 +20,10 @@ from nameko.amqp.publish import (
     get_connection,
 )
 from nameko.constants import (
-    AMQP_SSL_CONFIG_KEY,
-    AMQP_URI_CONFIG_KEY,
-    DEFAULT_AMQP_URI,
-    DEFAULT_HEARTBEAT,
-    DEFAULT_PREFETCH_COUNT,
-    HEARTBEAT_CONFIG_KEY,
-    PREFETCH_COUNT_CONFIG_KEY,
-    RPC_EXCHANGE_CONFIG_KEY,
+    AMQP_SSL_CONFIG_KEY, AMQP_URI_CONFIG_KEY, DEFAULT_AMQP_URI,
+    DEFAULT_HEARTBEAT, DEFAULT_PREFETCH_COUNT, HEARTBEAT_CONFIG_KEY,
+    LOGIN_METHOD_CONFIG_KEY, PREFETCH_COUNT_CONFIG_KEY,
+    RPC_EXCHANGE_CONFIG_KEY
 )
 from nameko.exceptions import (
     ContainerBeingKilled,
@@ -90,6 +86,7 @@ class RpcConsumer(SharedExtension, ProviderCollector):
     async def setup(self):
 
         ssl = config.get(AMQP_SSL_CONFIG_KEY)
+        login_method = config.get(LOGIN_METHOD_CONFIG_KEY)
 
         heartbeat = self.consumer_options.pop(
             "heartbeat", config.get(HEARTBEAT_CONFIG_KEY, DEFAULT_HEARTBEAT)
@@ -169,6 +166,7 @@ class RpcConsumer(SharedExtension, ProviderCollector):
 
         exchange_name = config.get(RPC_EXCHANGE_CONFIG_KEY, "nameko-rpc")
         ssl = config.get(AMQP_SSL_CONFIG_KEY)
+        login_method = config.get(LOGIN_METHOD_CONFIG_KEY)
 
         responder = Responder(self.amqp_uri, exchange_name, message, ssl=ssl)
         result, exc_info = await responder.send_response(result, exc_info)
@@ -254,11 +252,12 @@ class Responder(object):
 
     publisher_cls = AIOPublisher
 
-    def __init__(self, amqp_uri, exchange_name, message, ssl=None):
+    def __init__(self, amqp_uri, exchange_name, message, ssl=None, login_method=None):
         self.amqp_uri = amqp_uri
         self.message = message
         self.exchange_name = exchange_name
         self.ssl = ssl
+        self.login_method = login_method
 
     async def send_response(self, result, exc_info):
 
@@ -289,7 +288,7 @@ class Responder(object):
         routing_key = self.message.header.properties.reply_to
         correlation_id = self.message.header.properties.correlation_id
 
-        publisher = self.publisher_cls(self.message.channel, ssl=self.ssl)
+        publisher = self.publisher_cls(self.message.channel, ssl=self.ssl, login_method=self.login_method)
 
         await publisher.publish(
             payload,
@@ -354,6 +353,7 @@ class ReplyListener(SharedExtension):
         self.routing_key = str(reply_queue_uuid)
 
         ssl = config.get(AMQP_SSL_CONFIG_KEY)
+        login_method = config.get(LOGIN_METHOD_CONFIG_KEY)
 
         heartbeat = self.consumer_options.pop(
             "heartbeat", config.get(HEARTBEAT_CONFIG_KEY, DEFAULT_HEARTBEAT)
@@ -461,13 +461,18 @@ class ClusterRpc(DependencyProvider):
         serializer = self.publisher_options.pop("serializer", default_serializer)
 
         default_ssl = config.get(AMQP_SSL_CONFIG_KEY)
-        ssl = self.publisher_options.pop("ssl", default_ssl)
+        ssl = self.publisher_options.pop('ssl', default_ssl)
 
-        self.publisher_options.pop("uri", None)
+        default_login_method = config.get(LOGIN_METHOD_CONFIG_KEY)
+        login_method = self.publisher_options.pop('login_method', default_login_method)
+
+        self.publisher_options.pop('uri', None)
+
         await self.reply_listener.setup()
         self.publisher = self.publisher_cls(
             self.reply_listener.consumer.channel,
             ssl=ssl,
+            login_method=login_method,
             serializer=serializer,
             declare=[self.reply_listener.queue],
             reply_to=self.reply_listener.routing_key,

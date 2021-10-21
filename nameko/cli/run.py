@@ -10,6 +10,7 @@ import logging.config
 import signal
 import sys
 
+import eventlet
 from eventlet import backdoor
 
 from nameko import config

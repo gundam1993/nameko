@@ -10,8 +10,9 @@ from eventlet.event import Event
 from mock import ANY, Mock, patch
 from six.moves import queue
 
-from nameko import config
+import nameko
 from nameko.amqp.consume import Consumer
+from nameko.constants import LOGIN_METHOD_CONFIG_KEY
 from nameko.containers import WorkerContext
 from nameko.events import (
     BROADCAST, SERVICE_POOL, SINGLETON, EventDispatcher, EventHandler,
@@ -27,6 +28,38 @@ from nameko.utils.retry import retry
 
 
 EVENTS_TIMEOUT = 5
+
+
+@pytest.mark.parametrize(
+    "config,expected_no_declare",
+    [
+        ({'DECLARE_EVENT_EXCHANGES': True}, False),
+        ({'DECLARE_EVENT_EXCHANGES': False}, True),
+        ({'DECLARE_EVENT_EXCHANGES': None}, False),
+        ({}, False)
+    ]
+)
+def test_auto_declaration(config, expected_no_declare):
+    with nameko.config.patch(config):
+        service_name = "example"
+        exchange = get_event_exchange(service_name)
+        assert exchange.no_declare is expected_no_declare
+
+
+@pytest.mark.parametrize(
+    "config,expected_auto_delete",
+    [
+        ({'AUTO_DELETE_EVENT_EXCHANGES': True}, True),
+        ({'AUTO_DELETE_EVENT_EXCHANGES': False}, False),
+        ({'AUTO_DELETE_EVENT_EXCHANGES': None}, False),
+        ({}, False)
+    ]
+)
+def test_auto_delete(config, expected_auto_delete):
+    with nameko.config.patch(config):
+        service_name = "example"
+        exchange = get_event_exchange(service_name)
+        assert exchange.auto_delete is expected_auto_delete
 
 
 def test_event_dispatcher(mock_container, mock_producer):
@@ -337,7 +370,7 @@ def test_broadcast_events(
     container_factory, get_vhost, queue_info, tracker, rabbit_manager
 ):
 
-    vhost = get_vhost(config['AMQP_URI'])
+    vhost = get_vhost(nameko.config['AMQP_URI'])
 
     class Base(object):
 
@@ -573,7 +606,7 @@ def test_unreliable_delivery(container_factory, queue_info, tracker):
 @pytest.mark.usefixtures("rabbit_config")
 def test_dispatch_to_rabbit(rabbit_manager, get_vhost, mock_container):
 
-    vhost = get_vhost(config['AMQP_URI'])
+    vhost = get_vhost(nameko.config['AMQP_URI'])
 
     container = mock_container
     container.shared_extensions = {}
@@ -802,15 +835,32 @@ class TestContainerBeingKilled(object):
 
 class TestSSL(object):
 
-    @pytest.fixture(params=[True, False])
-    def rabbit_ssl_options(self, request, rabbit_ssl_options):
-        verify_certs = request.param
-        if verify_certs is False:
-            # remove certificate paths from config
-            options = True
-        else:
-            options = rabbit_ssl_options
-        return options
+    @pytest.fixture(params=["PLAIN", "AMQPLAIN", "EXTERNAL"])
+    def login_method(self, request):
+        return request.param
+
+    @pytest.fixture(params=[True, False], ids=["use client cert", "no client cert"])
+    def use_client_cert(self, request):
+        return request.param
+
+    @pytest.fixture
+    def rabbit_ssl_config(self, rabbit_ssl_config, use_client_cert, login_method):
+
+        config = {
+            # set login method
+            LOGIN_METHOD_CONFIG_KEY: login_method
+        }
+
+        if use_client_cert is False:
+            # remove certificate paths
+            config['AMQP_SSL'] = True
+
+        # skip if not a valid combination
+        if login_method == "EXTERNAL" and not use_client_cert:
+            pytest.skip("EXTERNAL login method requires cert verification")
+
+        with nameko.config.patch(config):
+            yield
 
     @pytest.mark.usefixtures("rabbit_ssl_config")
     def test_event_handler_over_ssl(self, container_factory, rabbit_uri):

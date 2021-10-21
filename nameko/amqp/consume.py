@@ -62,14 +62,14 @@ class AIOConsumer:
         self.should_stop = True
 
     async def on_message(self, body, message):
-        print('message: ', message)
-        print('body: ', body)
+        print("message: ", message)
+        print("body: ", body)
         if self.should_stop:
             self.requeue_message(message)
             return
         for callback in self.callbacks:
             await callback(body, message)
-    
+
     async def ack_message(self, message):
         # only attempt to ack if the message connection is alive;
         # otherwise the message will already have been reclaimed by the broker
@@ -87,6 +87,7 @@ class Consumer(ConsumerMixin):
         self,
         amqp_uri,
         ssl=None,
+        login_method=None,
         queues=None,
         callbacks=None,
         heartbeat=None,
@@ -96,6 +97,7 @@ class Consumer(ConsumerMixin):
     ):
         self.amqp_uri = amqp_uri
         self.ssl = ssl
+        self.login_method = login_method
 
         self.queues = queues
         self.callbacks = callbacks or []
@@ -117,7 +119,12 @@ class Consumer(ConsumerMixin):
         that is lazily evaluated. It doesn't represent an established
         connection to the broker at this point.
         """
-        return Connection(self.amqp_uri, ssl=self.ssl, heartbeat=self.heartbeat)
+        return Connection(
+            self.amqp_uri,
+            ssl=self.ssl,
+            login_method=self.login_method,
+            heartbeat=self.heartbeat,
+        )
 
     def stop(self):
         """Stop this consumer.

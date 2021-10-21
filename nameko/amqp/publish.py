@@ -20,21 +20,33 @@ class UndeliverableMessage(Exception):
 
 
 @contextmanager
-def get_connection(amqp_uri, ssl=None, transport_options=None):
+def get_connection(amqp_uri, ssl=None, login_method=None, transport_options=None):
     if not transport_options:
         transport_options = DEFAULT_TRANSPORT_OPTIONS.copy()
-    conn = Connection(amqp_uri, transport_options=transport_options, ssl=ssl)
+    conn = Connection(
+        amqp_uri,
+        transport_options=transport_options,
+        login_method=login_method,
+        ssl=ssl,
+    )
 
     with connections[conn].acquire(block=True) as connection:
         yield connection
 
 
 @contextmanager
-def get_producer(amqp_uri, confirms=True, ssl=None, transport_options=None):
+def get_producer(
+    amqp_uri, confirms=True, ssl=None, login_method=None, transport_options=None
+):
     if transport_options is None:
         transport_options = DEFAULT_TRANSPORT_OPTIONS.copy()
     transport_options["confirm_publish"] = confirms
-    conn = Connection(amqp_uri, transport_options=transport_options, ssl=ssl)
+    conn = Connection(
+        amqp_uri,
+        transport_options=transport_options,
+        login_method=login_method,
+        ssl=ssl,
+    )
 
     with producers[conn].acquire(block=True) as producer:
         yield producer
@@ -134,7 +146,7 @@ class AIOPublisher(object):
         retry=None,
         retry_policy=None,
         ssl=None,
-        content_type='application/json',
+        content_type="application/json",
         **publish_kwargs
     ):
         self.channel = channel
@@ -201,15 +213,15 @@ class AIOPublisher(object):
         declare.extend(kwargs.pop("declare", ()))
         publish_kwargs.update(kwargs)  # remaining publish-time kwargs win
 
-        properties=aiormq.spec.Basic.Properties(
-                content_type=self.content_type,
-                content_encoding='utf-8',
-                correlation_id=publish_kwargs.get("correlation_id"),
-                reply_to=publish_kwargs.get("reply_to"),
-                priority=priority,
-                delivery_mode=delivery_mode,
-                headers=headers,
-            )
+        properties = aiormq.spec.Basic.Properties(
+            content_type=self.content_type,
+            content_encoding="utf-8",
+            correlation_id=publish_kwargs.get("correlation_id"),
+            reply_to=publish_kwargs.get("reply_to"),
+            priority=priority,
+            delivery_mode=delivery_mode,
+            headers=headers,
+        )
         await self.channel.basic_publish(
             json.dumps(payload).encode(),
             routing_key=publish_kwargs.get("routing_key"),
@@ -355,10 +367,12 @@ class Publisher(object):
         retry=None,
         retry_policy=None,
         ssl=None,
+        login_method=None,
         **publish_kwargs
     ):
         self.amqp_uri = amqp_uri
         self.ssl = ssl
+        self.login_method = login_method
 
         # publish confirms
         if use_confirms is not None:
@@ -425,6 +439,7 @@ class Publisher(object):
             self.amqp_uri,
             use_confirms,
             self.ssl,
+            self.login_method,
             transport_options,
         ) as producer:
             try:

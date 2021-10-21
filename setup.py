@@ -13,7 +13,7 @@ with open(os.path.join(here, 'README.rst'), 'r', 'utf-8') as handle:
 
 setup(
     name='nameko',
-    version='v3.0.0-rc9',
+    version='v3.0.0-rc10',
     description='A microservices framework for Python that lets service '
                 'developers concentrate on application logic and encourages '
                 'testability.',
@@ -34,21 +34,17 @@ setup(
         "pyyaml>=5.1",
         "requests>=1.2.0",
         "six>=1.9.0",
-        "werkzeug>=0.9",
+        "werkzeug>=1.0.0",
         "wrapt>=1.0.0",
+        "packaging",
     ],
     extras_require={
         'dev': [
-            "astroid==2.2.5;python_version>='3'",
-            "astroid==1.6.5;python_version<'3'",
-            "coverage==4.5.1",
-            "flake8==3.3.0",
+            "coverage==5.5",
+            "flake8==3.9.2",
             "isort==4.2.15",
-            "mccabe==0.6.1",
-            "pycodestyle==2.3.1",
-            "pyflakes==1.5.0",
-            "pylint==2.3.1;python_version>='3'",
-            "pylint==1.8.0;python_version<'3'",
+            "pylint==1.9.5 ; python_version<'3'",
+            "pylint==2.11.1 ; python_version>'3'",
             "pytest==4.3.1",
             "pytest-cov==2.5.1",
             "pytest-timeout==1.3.3",
@@ -68,7 +64,7 @@ setup(
             "moto==1.3.6",
             "bcrypt==3.1.3",
             "regex==2018.2.21"
-        ]
+        ],
     },
     entry_points={
         'console_scripts': [
@@ -87,8 +83,11 @@ setup(
         "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.3",
-        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
         "Topic :: Internet",
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Intended Audience :: Developers",

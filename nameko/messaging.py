@@ -26,6 +26,7 @@ from nameko.constants import (
     DEFAULT_PREFETCH_COUNT,
     HEADER_PREFIX,
     HEARTBEAT_CONFIG_KEY,
+    LOGIN_METHOD_CONFIG_KEY,
     PREFETCH_COUNT_CONFIG_KEY,
 )
 from nameko.exceptions import ContainerBeingKilled
@@ -45,7 +46,8 @@ def encode_to_headers(context_data, prefix=HEADER_PREFIX):
 
 def decode_from_headers(headers, prefix=HEADER_PREFIX):
     return {
-        re.sub("^{}\.".format(prefix), "", key): value for key, value in headers.items()
+        re.sub(r"^{}\.".format(prefix), "", key): value
+        for key, value in headers.items()
     }
 
 
@@ -183,7 +185,10 @@ class Publisher(DependencyProvider):
         default_ssl = config.get(AMQP_SSL_CONFIG_KEY)
         ssl = self.publisher_options.pop("ssl", default_ssl)
 
-        with get_connection(self.amqp_uri, ssl) as conn:
+        default_login_method = config.get(LOGIN_METHOD_CONFIG_KEY)
+        login_method = self.publisher_options.pop("login_method", default_login_method)
+
+        with get_connection(self.amqp_uri, ssl=ssl, login_method=login_method) as conn:
             for entity in self.declare:
                 maybe_declare(entity, conn.channel())
 
@@ -291,14 +296,14 @@ class AIOConsumer(Entrypoint):
         self.consumer.stop()
 
     async def handle_message(self, message):
-        print('message: ', message)
+        print("message: ", message)
         body = message.body
-        print('body: ', body)
+        print("body: ", body)
         args = (body,)
         kwargs = {}
 
         context_data = decode_from_headers(message.header.properties.headers)
-        print('context_data: ', context_data)
+        print("context_data: ", context_data)
 
         handle_result = partial(self.handle_result, message)
 
@@ -393,6 +398,7 @@ class Consumer(Entrypoint):
 
     def setup(self):
         ssl = config.get(AMQP_SSL_CONFIG_KEY)
+        login_method = config.get(LOGIN_METHOD_CONFIG_KEY)
 
         heartbeat = self.consumer_options.pop(
             "heartbeat", config.get(HEARTBEAT_CONFIG_KEY, DEFAULT_HEARTBEAT)
@@ -409,6 +415,7 @@ class Consumer(Entrypoint):
         self.consumer = self.consumer_cls(
             self.amqp_uri,
             ssl=ssl,
+            login_method=login_method,
             queues=queues,
             callbacks=callbacks,
             heartbeat=heartbeat,
