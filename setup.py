@@ -24,10 +24,11 @@ setup(
     install_requires=[
         "click>=7.0",
         "dnspython<2",
-        "eventlet>=0.20.1",
-        "eventlet>=0.21.0 ; python_version>='3.6'",
-        "eventlet>=0.25.0 ; python_version>='3.7'",
-        "kombu>=4.2.0,<5",
+        "eventlet>=0.20.1;python_version<'3.6'",
+        "eventlet>=0.21.0;python_version>='3.6' and python_version<'3.7'",
+        "eventlet>=0.26.0;python_version>='3.7'",
+        "kombu>=5.1,<6",
+        "aiormq>=5.2.2,<6"
         "mock>=1.2",
         "path.py>=6.2",
         "pyyaml>=5.1",
@@ -63,7 +64,7 @@ setup(
             "moto==1.3.6",
             "bcrypt==3.1.3",
             "regex==2018.2.21"
-        ]
+        ],
     },
     entry_points={
         'console_scripts': [

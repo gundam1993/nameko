@@ -8,3 +8,5 @@ certs
 *.egg-info
 dist
 .tox
+
+.history/

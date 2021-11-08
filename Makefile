@@ -20,12 +20,12 @@ imports:
 	isort -rc $(autofix) nameko test
 
 test_lib:
-	BRANCH=$(ENABLE_BRANCH_COVERAGE) coverage run -m pytest test -v --strict --timeout 30
+	BRANCH=$(ENABLE_BRANCH_COVERAGE) coverage run -m nameko test test -v --strict --timeout 30
 	BRANCH=$(ENABLE_BRANCH_COVERAGE) coverage report
 
 test_examples:
-	BRANCH=$(ENABLE_BRANCH_COVERAGE) py.test docs/examples/test --strict --timeout 30 --cov=docs/examples --cov-config=$(CURDIR)/.coveragerc
-	py.test docs/examples/testing
+	BRANCH=$(ENABLE_BRANCH_COVERAGE) nameko test docs/examples/test --strict --timeout 30 --cov=docs/examples --cov-config=$(CURDIR)/.coveragerc
+	nameko test docs/examples/testing
 
 test_docs: docs spelling #linkcheck
 
@@ -37,3 +37,9 @@ spelling:
 
 linkcheck:
 	sphinx-build -W -b linkcheck -d docs/build/doctrees docs docs/build/linkcheck
+
+run:
+	nameko run --config config.yaml testService.service:Test
+
+shell:
+	nameko shell --config config.yaml

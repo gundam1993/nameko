@@ -34,9 +34,9 @@ import uuid
 from logging import getLogger
 
 from kombu import Queue
+from nameko.constants import PERSISTENT
 
-from nameko.messaging import Consumer, Publisher, encode_to_headers
-from nameko.standalone.events import get_event_exchange
+from nameko.messaging import AIOConsumer, AIOPublisher, encode_to_headers
 
 
 SERVICE_POOL = "service_pool"
@@ -46,13 +46,19 @@ BROADCAST = "broadcast"
 _log = getLogger(__name__)
 
 
+def get_event_exchange(service_name):
+    """Get an exchange for ``service_name`` events."""
+    exchange_name = "{}.events".format(service_name)
+
+    return exchange_name
+
+
 class EventHandlerConfigurationError(Exception):
-    """ Raised when an event handler is misconfigured.
-    """
+    """Raised when an event handler is misconfigured."""
 
 
-class EventDispatcher(Publisher):
-    """ Provides an event dispatcher method via dependency injection.
+class EventDispatcher(AIOPublisher):
+    """Provides an event dispatcher method via dependency injection.
 
     Events emitted will be dispatched via the service's events exchange,
     which automatically gets declared by the event dispatcher
@@ -78,31 +84,37 @@ class EventDispatcher(Publisher):
 
     """
 
-    def setup(self):
-        self.exchange = get_event_exchange(self.container.service_name)
-        self.declare.append(self.exchange)
-        super(EventDispatcher, self).setup()
+    async def setup(self):
+        self.exchange_name = get_event_exchange(self.container.service_name)
+
+        # self.declare.append(self.exchange)
+        await super(EventDispatcher, self).setup()
 
     def get_dependency(self, worker_ctx):
-        """ Inject a dispatch method onto the service instance
-        """
+        """Inject a dispatch method onto the service instance"""
 
-        def dispatch(event_type, event_data):
+        async def dispatch(event_type, event_data):
             extra_headers = encode_to_headers(worker_ctx.context_data)
-            self.publisher.publish(
+            await self.publisher.publish(
                 event_data,
-                exchange=self.exchange,
+                exchange_name=self.exchange_name,
                 routing_key=event_type,
-                extra_headers=extra_headers
+                extra_headers=extra_headers,
             )
 
         return dispatch
 
 
-class EventHandler(Consumer):
-
-    def __init__(self, source_service, event_type, handler_type=SERVICE_POOL,
-                 reliable_delivery=True, requeue_on_error=False, **kwargs):
+class EventHandler(AIOConsumer):
+    def __init__(
+        self,
+        source_service,
+        event_type,
+        handler_type=SERVICE_POOL,
+        reliable_delivery=True,
+        requeue_on_error=False,
+        **kwargs
+    ):
         r"""
         Decorate a method as a handler of ``event_type`` events on the service
         called ``source_service``.
@@ -164,7 +176,7 @@ class EventHandler(Consumer):
 
     @property
     def broadcast_identifier(self):
-        """ A unique string to identify a service instance for `BROADCAST`
+        """A unique string to identify a service instance for `BROADCAST`
         type handlers.
 
         The `broadcast_identifier` is appended to the queue name when the
@@ -219,33 +231,36 @@ class EventHandler(Consumer):
                 "You are using the default broadcast identifier "
                 "which is not compatible with reliable delivery. See "
                 ":meth:`nameko.events.EventHandler.broadcast_identifier` "
-                "for details.")
+                "for details."
+            )
 
         return uuid.uuid4().hex
 
-    def setup(self):
-        _log.debug('starting %s', self)
+    async def setup(self):
+        _log.debug("starting %s", self)
+        await super(EventHandler, self).setup()
 
+    async def start(self):
         # handler_type determines queue name and exclusive flag
         exclusive = False
         service_name = self.container.service_name
         if self.handler_type is SERVICE_POOL:
-            queue_name = "evt-{}-{}--{}.{}".format(self.source_service,
-                                                   self.event_type,
-                                                   service_name,
-                                                   self.method_name)
+            queue_name = "evt-{}-{}--{}.{}".format(
+                self.source_service, self.event_type, service_name, self.method_name
+            )
         elif self.handler_type is SINGLETON:
-            queue_name = "evt-{}-{}".format(self.source_service,
-                                            self.event_type)
+            queue_name = "evt-{}-{}".format(self.source_service, self.event_type)
         elif self.handler_type is BROADCAST:
             broadcast_identifier = self.broadcast_identifier
-            queue_name = "evt-{}-{}--{}.{}-{}".format(self.source_service,
-                                                      self.event_type,
-                                                      service_name,
-                                                      self.method_name,
-                                                      broadcast_identifier)
+            queue_name = "evt-{}-{}--{}.{}-{}".format(
+                self.source_service,
+                self.event_type,
+                service_name,
+                self.method_name,
+                broadcast_identifier,
+            )
 
-        exchange = get_event_exchange(self.source_service)
+        exchange_name = get_event_exchange(self.source_service)
 
         # queues for handlers without reliable delivery should be marked as
         # auto-delete so they're removed when the consumer disconnects
@@ -258,12 +273,24 @@ class EventHandler(Consumer):
         exclusive = self.handler_type is BROADCAST
         if self.reliable_delivery:
             exclusive = False
+        await super(EventHandler, self).start()
+        # await self.consumer.run()
+        # Declare an exchange
+        await self.consumer.channel.exchange_declare(
+            exchange=exchange_name,
+            exchange_type="topic",
+            durable=True,
+            auto_delete=True,
+        )
+        declare_queue_result = await self.consumer.channel.queue_declare(
+            queue=queue_name, durable=True, auto_delete=auto_delete, exclusive=exclusive
+        )
+        self.queue = declare_queue_result.queue
+        await self.consumer.channel.queue_bind(
+            self.queue, exchange_name, routing_key=self.event_type
+        )
 
-        self.queue = Queue(
-            queue_name, exchange=exchange, routing_key=self.event_type,
-            durable=True, auto_delete=auto_delete, exclusive=exclusive)
-
-        super(EventHandler, self).setup()
+        await self.consumer.channel.basic_consume(self.queue, self.handle_message)
 
 
 event_handler = EventHandler.decorator

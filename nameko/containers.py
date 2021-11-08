@@ -1,6 +1,7 @@
 from __future__ import absolute_import, unicode_literals
 
 import inspect
+import asyncio
 import sys
 import uuid
 import warnings
@@ -151,7 +152,8 @@ class ServiceContainer(object):
                 self.subextensions.update(iter_extensions(bound))
 
         self.started = False
-        self._worker_pool = GreenPool(size=self.max_workers)
+        # self._worker_pool = GreenPool(size=self.max_workers)
+        self._worker_pool = asyncio.Semaphore(value=self.max_workers)
 
         self._worker_threads = {}
         self._managed_threads = {}
@@ -165,9 +167,10 @@ class ServiceContainer(object):
 
     @property
     def extensions(self):
-        return SpawningSet(
+        extensions = set(
             self.entrypoints | self.dependencies | self.subextensions
         )
+        return extensions
 
     @property
     def interface(self):
@@ -175,15 +178,17 @@ class ServiceContainer(object):
         """
         return self
 
-    def start(self):
+    async def start(self):
         """ Start a container by starting all of its extensions.
         """
         _log.debug('starting %s', self)
         self.started = True
 
         with _log_time('started %s', self):
-            self.extensions.all.setup()
-            self.extensions.all.start()
+            for extension in self.extensions:
+                print('extension: ', extension)
+                await extension.setup()
+                await extension.start()
 
     def stop(self):
         """ Stop the container gracefully.
@@ -311,7 +316,7 @@ class ServiceContainer(object):
         """
         return self._died.wait()
 
-    def spawn_worker(self, entrypoint, args, kwargs,
+    async def spawn_worker(self, entrypoint, args, kwargs,
                      context_data=None, handle_result=None):
         """ Spawn a worker thread for running the service method decorated
         by `entrypoint`.
@@ -337,15 +342,18 @@ class ServiceContainer(object):
         )
 
         _log.debug('spawning %s', worker_ctx)
-        gt = self._worker_pool.spawn(
-            self._run_worker, worker_ctx, handle_result
-        )
-        gt.link(self._handle_worker_thread_exited, worker_ctx)
+        await self._worker_pool.acquire()
+        await self._run_worker(worker_ctx, handle_result)
 
-        self._worker_threads[worker_ctx] = gt
+        # gt = self._worker_pool.spawn(
+        #     self._run_worker, worker_ctx, handle_result
+        # )
+        # gt.link(self._handle_worker_thread_exited, worker_ctx)
+
+        # self._worker_threads[worker_ctx] = gt
         return worker_ctx
 
-    def spawn_managed_thread(self, fn, identifier=None):
+    async def spawn_managed_thread(self, fn, identifier=None):
         """ Spawn a managed thread to run ``fn`` on behalf of an extension.
         The passed `identifier` will be included in logs related to this
         thread, and otherwise defaults to `fn.__name__`, if it is set.
@@ -360,13 +368,17 @@ class ServiceContainer(object):
         """
         if identifier is None:
             identifier = getattr(fn, '__name__', "<unknown>")
+        # print('fn: ', fn)
+        task = asyncio.create_task(fn())
+        self._managed_threads[task] = identifier
+        await task
 
-        gt = eventlet.spawn(fn)
-        self._managed_threads[gt] = identifier
-        gt.link(self._handle_managed_thread_exited, identifier)
-        return gt
+        # gt = eventlet.spawn(fn)
+        # self._managed_threads[gt] = identifier
+        # gt.link(self._handle_managed_thread_exited, identifier)
+        # return gt
 
-    def _run_worker(self, worker_ctx, handle_result):
+    async def _run_worker(self, worker_ctx, handle_result):
         _log.debug('setting up %s', worker_ctx)
 
         _log.debug('call stack for %s: %s',
@@ -385,7 +397,7 @@ class ServiceContainer(object):
                 _log.debug('calling handler for %s', worker_ctx)
 
                 with _log_time('ran handler for %s', worker_ctx):
-                    result = method(*worker_ctx.args, **worker_ctx.kwargs)
+                    result = await method(*worker_ctx.args, **worker_ctx.kwargs)
             except Exception as exc:
                 if isinstance(exc, worker_ctx.entrypoint.expected_exceptions):
                     _log.warning(
@@ -400,7 +412,7 @@ class ServiceContainer(object):
                 _log.debug('handling result for %s', worker_ctx)
 
                 with _log_time('handled result for %s', worker_ctx):
-                    result, exc_info = handle_result(
+                    result, exc_info =  await handle_result(
                         worker_ctx, result, exc_info)
 
             with _log_time('tore down worker %s', worker_ctx):
